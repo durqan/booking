@@ -8,6 +8,7 @@ use App\Models\Bookings;
 use App\Models\Services;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -48,10 +49,24 @@ class BookingController extends Controller
 
     public function to_book(Request $request)
     {
+        // Возможно добавлять записи только в интервале с 10 до 20 часов по мск.
+        $currentDateTime = Carbon::now();
+        $start = Carbon::now()->setTime(10, 0, 0);
+        $end = Carbon::now()->setTime(20, 0, 0);
+
+        if (!$currentDateTime->isBetween($start, $end))
+            return response('Запись возможна в промежутке между 10:00-20:00 МСК', 422);
+
+        //В вс запись добавлять нельзя.
+        if ($currentDateTime->dayOfWeek === 0)
+            return response('Запись возможна c Понедельника по Субботу', 422);
+
+
         $date = $request->date;
         $time = $request->time;
         $date_time = date('Y-m-d H:i', strtotime($date . ' ' . $time));
 
+        //Проверка на занятость слота
         $slot_is_busy = Bookings::where([
             'service_id' => $request->service_id,
             'service_price_id' => $request->price_id,
@@ -61,6 +76,7 @@ class BookingController extends Controller
         if(!empty($slot_is_busy))
             return response('Слот занят', 422);
 
+        //Очередь в RabbitMQ
         ToBookJob::dispatch([
             'service_id' => $request->service_id,
             'service_price_id' => $request->service_id,
